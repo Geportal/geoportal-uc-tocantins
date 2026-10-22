@@ -1,0 +1,58 @@
+# Publica o Geoportal UC Tocantins no GitHub Pages a partir dos quatro pacotes guardados no Google Drive
+# (pasta GEOPORTAL/03_PUBLICACAO/pacotes_github). Roda todo dia de manhã e também pelo botão "Run workflow".
+name: Publicar geoportal
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '23 9 * * *'        # 06:23 em Brasília
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+env:
+  # IDs dos pacotes no Drive (compartilhados como "qualquer pessoa com o link: leitor")
+  PARTE1: '1VrwVUzMfzfy0EWxBXcuJofV93ZxIkKiP'
+  PARTE2: '1hzwF22ZFB6d9nEssf39ozYzbt_quvdDR'
+  PARTE3: '1YQY8XTuX5JEV3beWlMDgbskeMqGZu2ga'
+  PARTE4: '123bWkB-XG_e3jrzFl40pvCxdYbv8RgDe'
+
+jobs:
+  publicar:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - name: Baixar os pacotes do Drive
+        run: |
+          set -euo pipefail
+          baixa () {
+            for t in 1 2 3; do
+              curl -sSL --fail -o "$2" "https://drive.usercontent.google.com/download?id=$1&export=download&confirm=t" && unzip -tq "$2" && return 0
+              echo "tentativa $t falhou para $2"; sleep 10
+            done
+            pip install --quiet gdown && gdown --quiet "$1" -O "$2" && unzip -tq "$2"
+          }
+          baixa "$PARTE1" parte1.zip
+          baixa "$PARTE2" parte2.zip
+          baixa "$PARTE3" parte3.zip
+          baixa "$PARTE4" parte4.zip
+          mkdir site
+          for z in parte1.zip parte2.zip parte3.zip parte4.zip; do unzip -q -o "$z" -d site; done
+          test -f site/index.html && test -f site/data/catalogo.json
+          python3 -c "import json; c = json.load(open('site/data/catalogo.json')); print('itens no catálogo:', len(c['itens']))"
+          cat site/versao.json; echo
+          echo "arquivos: $(find site -type f | wc -l)"
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - id: deploy
+        uses: actions/deploy-pages@v4
